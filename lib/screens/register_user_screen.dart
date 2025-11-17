@@ -14,7 +14,8 @@ class RegisterUserScreen extends StatefulWidget {
 class _RegisterUserScreenState extends State<RegisterUserScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-  final _inviteCodeController = TextEditingController(text: '1234');
+  // 기본값 제거: 사용자가 직접 입력하게
+  final _inviteCodeController = TextEditingController();
 
   bool _isLoading = false;
 
@@ -55,12 +56,22 @@ class _RegisterUserScreenState extends State<RegisterUserScreen> {
       );
       final data = jsonDecode(res.body);
 
-      // ✅ 해결방법 1: 서버(200)를 기준으로 체크
-      if (res.statusCode == 200 && data['ok'] == true) {
+      if ((res.statusCode == 200 || res.statusCode == 201) &&
+          data['ok'] == true) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('회원가입이 완료되었습니다. 로그인 해주세요.')),
         );
         Navigator.pop(context);
+      } else if (res.statusCode == 403 &&
+          (data['error'] == 'invalid_invite_code')) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('초대 코드가 올바르지 않습니다.')),
+        );
+      } else if (res.statusCode == 400 &&
+          (data['error'] == 'user_exists')) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('이미 존재하는 계정입니다.')),
+        );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -115,6 +126,7 @@ class _RegisterUserScreenState extends State<RegisterUserScreen> {
                 controller: _inviteCodeController,
                 decoration: const InputDecoration(
                   labelText: '초대 코드',
+                  hintText: '예: 1234',
                   prefixIcon: Icon(Icons.vpn_key_outlined),
                 ),
               ),

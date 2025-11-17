@@ -4,8 +4,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'main_navigator.dart';              // 같은 폴더라 상대경로
-import 'register_user_screen.dart';        // ← 여기 중요
+import 'main_navigator.dart';
+import 'register_user_screen.dart';
 import 'package:smart_extinguisher_app/utils/http_helper.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -61,17 +61,30 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (!mounted) return;
 
-      final responseBody = jsonDecode(response.body);
-      if (response.statusCode == 200 && responseBody['ok'] == true) {
-        final token = responseBody['token'] as String;
+      Map<String, dynamic> responseBody = {};
+      try {
+        responseBody = jsonDecode(response.body) as Map<String, dynamic>;
+      } catch (_) {
+        // JSON 파싱 실패 시 빈 맵
+      }
+
+      // 🔹 서버는 { token: "..."} 형태로 응답하므로 ok 여부 대신 token 존재로 판단
+      final dynamic tokenField = responseBody['token'];
+      final String? token =
+          tokenField is String ? tokenField : null;
+
+      if (response.statusCode == 200 && token != null && token.isNotEmpty) {
+        // 로그인 성공
         await _saveToken(token);
         _navigateToMainScreen();
       } else {
+        final String msg =
+            (responseBody['detail'] ?? responseBody['error'] ?? '알 수 없는 오류')
+                .toString();
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              '로그인 실패: ${responseBody['detail'] ?? responseBody['error'] ?? '알 수 없는 오류'}',
-            ),
+            content: Text('로그인 실패: $msg'),
           ),
         );
       }
@@ -90,7 +103,7 @@ class _LoginScreenState extends State<LoginScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => RegisterUserScreen(), // const 제거 + 클래스 잘 인식
+        builder: (context) => const RegisterUserScreen(),
       ),
     );
   }

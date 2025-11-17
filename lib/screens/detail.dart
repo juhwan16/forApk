@@ -20,11 +20,11 @@ class _DetailScreenState extends State<DetailScreen> {
   late bool _isSoundOn;
   late bool _isLightOn;
 
-  // 블루투스 상태
   BluetoothDevice? _device;
   bool _connecting = false;
   bool _connected = false;
   StreamSubscription<List<ScanResult>>? _scanSub;
+  List<ScanResult> _scanResults = [];
 
   @override
   void initState() {
@@ -40,14 +40,14 @@ class _DetailScreenState extends State<DetailScreen> {
     super.dispose();
   }
 
-  // 서버로 상태 패치
+  // ---------------- 서버에 상태 PATCH ----------------
   Future<void> _updateExtinguisher(Map<String, dynamic> patch) async {
     try {
       final res = await httpPut(
         '/api/v1/extinguishers/${widget.extinguisher.id}',
         patch,
         context: context,
-        auth: true, // ★ 토큰 필요
+        auth: true, // 반드시 true
       );
       final data = jsonDecode(res.body);
 
@@ -69,7 +69,7 @@ class _DetailScreenState extends State<DetailScreen> {
     }
   }
 
-  // 하드웨어로 명령 전송
+  // ---------------- 하드웨어로 명령 전송 ----------------
   Future<void> _sendCommand(String cmd) async {
     if (_device == null || !_connected) return;
 
@@ -87,57 +87,104 @@ class _DetailScreenState extends State<DetailScreen> {
         }
       }
     } catch (_) {
-      // 하드웨어 오류는 조용히 무시
+      // 조용히 무시
     }
   }
 
-  // 블루투스 기기 연결
-  Future<void> _connectToHardware() async {
-    if (_connected || _connecting) return;
+  // ---------------- 블루투스 스캔 + 디바이스 선택 ----------------
+  Future<void> _selectAndConnectDevice() async {
+    if (_connecting) return;
 
-    setState(() => _connecting = true);
+    setState(() {
+      _connecting = true;
+      _scanResults = [];
+    });
 
     try {
       await FlutterBluePlus.stopScan();
       await _scanSub?.cancel();
 
-      _scanSub = FlutterBluePlus.scanResults.listen(
-        (results) async {
-          if (results.isEmpty) return;
+      _scanSub = FlutterBluePlus.scanResults.listen((results) {
+        if (!mounted) return;
+        setState(() {
+          _scanResults = results;
+        });
+      });
 
-          // 필요하면 여기서 이름 필터링 (r.device.platformName)
-          final r = results.first;
+      await FlutterBluePlus.startScan(timeout: const Duration(seconds: 5));
+      await Future.delayed(const Duration(seconds: 5));
+      await FlutterBluePlus.stopScan();
+      await _scanSub?.cancel();
 
-          await FlutterBluePlus.stopScan();
-          await _scanSub?.cancel();
+      if (!mounted) return;
+      setState(() => _connecting = false);
 
-          try {
-            await r.device.connect(timeout: const Duration(seconds: 5));
-          } catch (_) {
-            // 이미 연결되어 있거나 실패
-          }
+      if (_scanResults.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('주변에서 기기를 찾지 못했습니다.')),
+        );
+        return;
+      }
 
-          if (!mounted) return;
-          setState(() {
-            _device = r.device;
-            _connected = true;
-            _connecting = false;
-          });
-
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('하드웨어 연결됨: ${r.device.platformName}')),
+      // 기기 선택 바텀시트
+      final selected = await showModalBottomSheet<ScanResult>(
+        context: context,
+        builder: (ctx) {
+          return SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const ListTile(
+                  title: Text('연결할 블루투스 기기를 선택하세요'),
+                ),
+                const Divider(height: 1),
+                Expanded(
+                  child: ListView.builder(
+                    itemCount: _scanResults.length,
+                    itemBuilder: (context, index) {
+                      final r = _scanResults[index];
+                      final name =
+                          r.device.platformName.isNotEmpty ? r.device.platformName : '알 수 없는 기기';
+                      final id = r.device.remoteId.str;
+                      return ListTile(
+                        title: Text(name),
+                        subtitle: Text(id),
+                        onTap: () => Navigator.pop(ctx, r),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
           );
         },
+        isScrollControlled: true,
       );
 
-      await FlutterBluePlus.startScan(
-        timeout: const Duration(seconds: 5),
-      );
+      if (selected == null) return;
+
+      // 선택된 기기에 연결
+      try {
+        await selected.device.connect(timeout: const Duration(seconds: 5));
+        if (!mounted) return;
+        setState(() {
+          _device = selected.device;
+          _connected = true;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('하드웨어 연결됨: ${selected.device.platformName}')),
+        );
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('연결 실패: $e')),
+        );
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() => _connecting = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('블루투스 연결 실패: $e')),
+        SnackBar(content: Text('블루투스 검색 실패: $e')),
       );
     }
   }
@@ -164,6 +211,7 @@ class _DetailScreenState extends State<DetailScreen> {
     });
   }
 
+  // ---------------- 토글 핸들러 ----------------
   Future<void> _toggleSound(bool value) async {
     setState(() => _isSoundOn = value);
     await _updateExtinguisher({'isSoundOn': value});
@@ -178,20 +226,15 @@ class _DetailScreenState extends State<DetailScreen> {
 
   String? _buildImageUrl(String? path) {
     if (path == null || path.isEmpty) return null;
-
-    // 서버가 전체 URL을 주는 경우
     if (path.startsWith('http://') || path.startsWith('https://')) {
       return path;
     }
-
-    // 서버에서 상대 경로만 내려줄 때
     return '$imageRootUrl$path';
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-
     final imageUrl = _buildImageUrl(widget.extinguisher.imagePath);
 
     return Scaffold(
@@ -236,7 +279,6 @@ class _DetailScreenState extends State<DetailScreen> {
               ),
             const SizedBox(height: 16),
 
-            // 위치 / 사용 가능 기간
             Text(
               '위치: ${widget.extinguisher.location.isEmpty ? '정보 없음' : widget.extinguisher.location}',
               style: theme.textTheme.titleMedium,
@@ -274,7 +316,7 @@ class _DetailScreenState extends State<DetailScreen> {
                             ? '블루투스 연결됨 (${_device?.platformName ?? '알 수 없음'})'
                             : _connecting
                                 ? '주변 기기 검색 중...'
-                                : '블루투스로 하드웨어 소화기와 연결할 수 있습니다.',
+                                : '블루투스 기기를 검색하여 연결할 수 있습니다.',
                         style: theme.textTheme.bodyMedium,
                       ),
                     ),
@@ -286,8 +328,8 @@ class _DetailScreenState extends State<DetailScreen> {
                           )
                         : TextButton(
                             onPressed:
-                                _connecting ? null : _connectToHardware,
-                            child: const Text('기기 연결'),
+                                _connecting ? null : _selectAndConnectDevice,
+                            child: const Text('기기 검색'),
                           ),
                   ],
                 ),
@@ -295,7 +337,6 @@ class _DetailScreenState extends State<DetailScreen> {
             ),
             const SizedBox(height: 24),
 
-            // 제어 스위치
             SwitchListTile(
               title: const Text('불빛 ON / OFF'),
               value: _isLightOn,
