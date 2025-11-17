@@ -1,7 +1,7 @@
 name: smart_extinguisher_app
 description: "A new Flutter project."
 
-publish_to: 'none' 
+publish_to: 'none'
 
 version: 1.0.0+1
 
@@ -12,20 +12,20 @@ dependencies:
   flutter:
     sdk: flutter
 
-  # ✅ 1. 서버 통신 (로그인, 소화기 데이터)
-  http: ^1.2.0 # (또는 최신 버전)
-  
-  # ✅ 2. 로컬 저장소 (로그인 토큰 저장)
+  # 1. 서버 통신 (로그인, 소화기 데이터)
+  http: ^1.2.0
+
+  # 2. 로컬 저장소 (로그인 토큰 저장)
   shared_preferences: ^2.2.2
-  
-  # ✅ 3. 소화기 고유 ID 생성 (모델에서 필요할 수 있음)
-  uuid: ^4.2.1 
-  
-  # ✅ 4. 블루투스
+
+  # 3. 소화기 고유 ID 생성
+  uuid: ^4.2.1
+
+  # 4. 블루투스
   flutter_blue_plus: ^1.34.5
   permission_handler: ^11.3.1
-  
-  # ✅ 5. 이미지 선택
+
+  # 5. 이미지 선택
   image_picker: ^1.2.0
 
   cupertino_icons: ^1.0.8
@@ -36,5 +36,18 @@ dev_dependencies:
 
   flutter_lints: ^5.0.0
 
+  # 앱 아이콘 자동 생성 패키지
+  flutter_launcher_icons: ^0.13.1
+
+# flutter_launcher_icons 설정
+flutter_icons:
+  android: true
+  ios: true
+  image_path: "assets/app_icon.png"
+
 flutter:
   uses-material-design: true
+
+  assets:
+    - assets/images/
+    - assets/app_icon.png

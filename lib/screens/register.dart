@@ -1,8 +1,8 @@
+// C:\project\smart_extinguisher_app-main\lib\screens\register.dart
+// lib/screens/register.dart
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:smart_extinguisher_app/screens/login_screen.dart';
@@ -18,9 +18,7 @@ class RegisterScreen extends StatefulWidget {
 class _RegisterScreenState extends State<RegisterScreen> {
   final TextEditingController _locationController = TextEditingController();
   final TextEditingController _expireDateController = TextEditingController();
-  final ImagePicker _picker = ImagePicker();
 
-  File? _selectedImage;
   bool _isLoading = false;
 
   @override
@@ -44,21 +42,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
     );
   }
 
-  // 이미지 선택
-  Future<void> _pickImage() async {
-    final XFile? xfile = await _picker.pickImage(
-      source: ImageSource.gallery,
-      maxWidth: 1200,
-      imageQuality: 85,
-    );
-
-    if (xfile == null) return;
-
-    setState(() {
-      _selectedImage = File(xfile.path);
-    });
-  }
-
   // 소화기 등록
   Future<void> _registerExtinguisher() async {
     final location = _locationController.text.trim();
@@ -76,35 +59,45 @@ class _RegisterScreenState extends State<RegisterScreen> {
     });
 
     try {
-      // 서버로 전송할 body
       final body = {
         'location': location,
         'expireDate': expireDate,
+        // 초기 상태는 항상 꺼짐으로 등록
+        'isLightOn': false,
+        'isSoundOn': false,
       };
 
       final res = await httpPost(
         '/api/v1/extinguishers',
         body,
         context: context,
-        auth: true, // ★★★ 여기 핵심: 토큰 붙여서 호출 ★★★
+        auth: true,
       );
 
-      final data = jsonDecode(res.body);
+      Map<String, dynamic> data = {};
+      try {
+        data = jsonDecode(res.body) as Map<String, dynamic>;
+      } catch (_) {
+        // 응답이 비어 있거나 JSON 이 아닐 수도 있음
+      }
 
-      if (res.statusCode == 201 && data['ok'] == true) {
+      // 200 또는 201 이면 성공으로 간주 (서버가 ok 플래그를 안줘도 되도록)
+      if (res.statusCode == 200 || res.statusCode == 201) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('소화기가 등록되었습니다.')),
         );
 
         _locationController.clear();
         _expireDateController.clear();
-
-        setState(() => _selectedImage = null);
       } else {
+        final msg =
+            (data['error'] ?? data['detail'] ?? data['message'] ?? '알 수 없는 오류')
+                .toString();
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              '등록 실패: ${data['error'] ?? data['detail'] ?? '알 수 없는 오류'}',
+              '등록 실패: $msg',
             ),
           ),
         );
@@ -164,8 +157,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 child: Padding(
                   padding: const EdgeInsets.all(18.0),
                   child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      // 위치 입력
                       TextField(
                         controller: _locationController,
                         decoration: const InputDecoration(
@@ -175,8 +168,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         ),
                       ),
                       const SizedBox(height: 16),
-
-                      // 사용 가능 기간
                       TextField(
                         controller: _expireDateController,
                         decoration: const InputDecoration(
@@ -186,64 +177,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         ),
                         keyboardType: TextInputType.datetime,
                       ),
-                      const SizedBox(height: 16),
-
-                      // 이미지 선택 박스 (현재는 UI만, 업로드는 다음 단계)
-                      GestureDetector(
-                        onTap: _pickImage,
-                        child: Container(
-                          width: double.infinity,
-                          height: 160,
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(
-                              color: Colors.grey.shade400,
-                            ),
-                            color: Colors.grey.shade100,
-                          ),
-                          child: _selectedImage == null
-                              ? Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(
-                                      Icons.image_outlined,
-                                      size: 40,
-                                      color: Colors.grey.shade600,
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      '이미지 선택 (선택 사항)',
-                                      style:
-                                          theme.textTheme.bodyMedium?.copyWith(
-                                        color: Colors.grey.shade600,
-                                      ),
-                                    ),
-                                  ],
-                                )
-                              : ClipRRect(
-                                  borderRadius: BorderRadius.circular(14),
-                                  child: Image.file(
-                                    _selectedImage!,
-                                    width: double.infinity,
-                                    height: double.infinity,
-                                    fit: BoxFit.cover,
-                                  ),
-                                ),
-                        ),
-                      ),
-
-                      const SizedBox(height: 8),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: TextButton.icon(
-                          onPressed: _pickImage,
-                          icon: const Icon(Icons.photo_library_outlined),
-                          label: const Text('이미지 다시 선택'),
-                        ),
-                      ),
-
-                      const SizedBox(height: 16),
-
+                      const SizedBox(height: 24),
                       SizedBox(
                         width: double.infinity,
                         child: _isLoading
@@ -272,10 +206,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
               ),
 
               const Spacer(),
-
               Text(
-                '※ 등록된 소화기는 "소화기 목록" 탭에서 확인할 수 있습니다.\n'
-                '※ 이미지는 현재 기기에서만 표시되며, 서버 저장 기능은 다음 단계에서 추가됩니다.',
+                '※ 등록된 소화기는 "소화기 목록" 탭에서 확인할 수 있습니다.',
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: Colors.grey[600],
                 ),

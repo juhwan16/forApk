@@ -1,12 +1,12 @@
-// lib/screens/login_screen.dart
+// C:\project\smart_extinguisher_app-main\lib\screens\login_screen.dart
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'main_navigator.dart';
-import 'register_user_screen.dart';
+import 'package:smart_extinguisher_app/screens/register_user_screen.dart';
 import 'package:smart_extinguisher_app/utils/http_helper.dart';
+import 'main_navigator.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -68,10 +68,9 @@ class _LoginScreenState extends State<LoginScreen> {
         // JSON 파싱 실패 시 빈 맵
       }
 
-      // 🔹 서버는 { token: "..."} 형태로 응답하므로 ok 여부 대신 token 존재로 판단
+      // 서버는 { token: "..."} 형태로 응답한다고 가정
       final dynamic tokenField = responseBody['token'];
-      final String? token =
-          tokenField is String ? tokenField : null;
+      final String? token = tokenField is String ? tokenField : null;
 
       if (response.statusCode == 200 && token != null && token.isNotEmpty) {
         // 로그인 성공
@@ -103,6 +102,7 @@ class _LoginScreenState extends State<LoginScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(
+        // 여기서 이제 실제로 존재하는 RegisterUserScreen 으로 이동
         builder: (context) => const RegisterUserScreen(),
       ),
     );
@@ -149,7 +149,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     children: [
                       TextField(
                         decoration: const InputDecoration(
-                          labelText: '이메일',
+                          labelText: '이메일(아이디)',
                           prefixIcon: Icon(Icons.person_outline),
                         ),
                         keyboardType: TextInputType.emailAddress,

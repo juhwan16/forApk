@@ -17,7 +17,7 @@ class _MainNavigatorState extends State<MainNavigator> {
   Widget build(BuildContext context) {
     final screens = <Widget>[
       const RegisterScreen(),          // 탭 0: 소화기 등록
-      ExtinguisherListScreen(),        // 탭 1: 소화기 목록 (const 제거)
+      const ExtinguisherListScreen(),  // 탭 1: 소화기 목록
     ];
 
     return Scaffold(

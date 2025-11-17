@@ -1,13 +1,14 @@
-// lib/screens/extinguisher_list_screen.dart
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:smart_extinguisher_app/models/fire_extinguisher.dart';
 import 'package:smart_extinguisher_app/screens/detail.dart';
+import 'package:smart_extinguisher_app/screens/register_user_screen.dart';
 import 'package:smart_extinguisher_app/utils/http_helper.dart';
+import 'package:smart_extinguisher_app/services/bluetooth_service.dart';
 
 class ExtinguisherListScreen extends StatefulWidget {
-  const ExtinguisherListScreen({Key? key}) : super(key: key);
+  const ExtinguisherListScreen({super.key});
 
   @override
   State<ExtinguisherListScreen> createState() => _ExtinguisherListScreenState();
@@ -15,7 +16,8 @@ class ExtinguisherListScreen extends StatefulWidget {
 
 class _ExtinguisherListScreenState extends State<ExtinguisherListScreen> {
   bool _loading = false;
-  List<FireExtinguisher> _items = [];
+  String? _error;
+  final List<FireExtinguisher> _items = [];
 
   @override
   void initState() {
@@ -26,6 +28,7 @@ class _ExtinguisherListScreenState extends State<ExtinguisherListScreen> {
   Future<void> _loadExtinguishers() async {
     setState(() {
       _loading = true;
+      _error = null;
     });
 
     try {
@@ -34,151 +37,216 @@ class _ExtinguisherListScreenState extends State<ExtinguisherListScreen> {
         context: context,
         auth: true,
       );
+      final data = jsonDecode(res.body);
 
-      if (!mounted) return;
-
-      if (res.statusCode == 200) {
-        final jsonBody = jsonDecode(res.body) as Map<String, dynamic>;
-        if (jsonBody['ok'] == true && jsonBody['data'] is List) {
-          final List<dynamic> list = jsonBody['data'];
-          final items = list
-              .map((e) => FireExtinguisher.fromJson(e as Map<String, dynamic>))
-              .toList();
-
-          setState(() {
-            _items = items;
-          });
-        } else {
-          _showSnackBar('소화기 목록을 불러오지 못했습니다.');
-        }
-      } else if (res.statusCode == 401) {
-        _showSnackBar('로그인이 필요합니다.');
-        // 필요하면 여기서 로그인 화면으로 이동 로직 추가
+      if (res.statusCode == 200 && data['extinguishers'] is List) {
+        final List list = data['extinguishers'] as List;
+        _items
+          ..clear()
+          ..addAll(list
+              .map((e) => FireExtinguisher.fromJson(e as Map<String, dynamic>)));
       } else {
-        _showSnackBar('서버 에러: ${res.statusCode}');
+        _items.clear();
+        _error =
+            '목록을 불러오지 못했습니다: ${data['error'] ?? data['detail'] ?? '알 수 없는 오류'}';
       }
     } catch (e) {
-      if (!mounted) return;
-      _showSnackBar('네트워크 오류: $e');
+      _error = '오류 발생: $e';
+      _items.clear();
     } finally {
-      if (mounted) {
-        setState(() {
-          _loading = false;
-        });
-      }
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+      });
     }
   }
 
-  Future<void> _globalOff() async {
+  Future<void> _goToRegister() async {
+    final changed = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const RegisterExtinguisherScreen(),
+      ),
+    );
+    if (changed == true) {
+      await _loadExtinguishers();
+    } else {
+      // changed 가 null 이거나 false 여도, 그냥 항상 새로고침 해도 됨
+      await _loadExtinguishers();
+    }
+  }
+
+  Future<void> _deleteItem(FireExtinguisher item) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('삭제'),
+        content: Text('소화기 "${item.location}"을(를) 삭제하시겠습니까?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('취소'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('삭제'),
+          ),
+        ],
+      ),
+    );
+
+    if (ok != true) return;
+
     try {
-      final res = await httpPut(
+      final res = await httpDelete(
+        '/api/v1/extinguishers/${item.id}',
+        context: context,
+        auth: true,
+      );
+      final data = jsonDecode(res.body);
+
+      if (res.statusCode == 200 && data['ok'] == true) {
+        if (!mounted) return;
+        setState(() {
+          _items.removeWhere((e) => e.id == item.id);
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('삭제되었습니다.')),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '삭제 실패: ${data['error'] ?? data['detail'] ?? '알 수 없는 오류'}',
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('오류 발생: $e')),
+      );
+    }
+  }
+
+  Future<void> _allOff() async {
+    try {
+      await httpPost(
         '/api/v1/extinguishers/global-off',
         {},
         context: context,
         auth: true,
       );
+    } catch (_) {}
 
-      if (!mounted) return;
-
-      if (res.statusCode == 200) {
-        final jsonBody = jsonDecode(res.body) as Map<String, dynamic>;
-        if (jsonBody['ok'] == true) {
-          _showSnackBar('모든 소화기의 빛/소리를 끔');
-          await _loadExtinguishers();
-        } else {
-          _showSnackBar('전역 OFF 처리 실패');
-        }
-      } else {
-        _showSnackBar('서버 에러: ${res.statusCode}');
-      }
-    } catch (e) {
-      if (!mounted) return;
-      _showSnackBar('네트워크 오류: $e');
+    if (myBleService.ready) {
+      await myBleService.turnAllOff();
     }
-  }
 
-  void _showSnackBar(String message) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
+      const SnackBar(content: Text('불빛·소리 OFF 신호를 전송했습니다.')),
     );
-  }
-
-  Future<void> _openDetail(FireExtinguisher extinguisher) async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => DetailScreen(extinguisher: extinguisher),
-      ),
-    );
-    // 상세 화면에서 저장 후 돌아오면 목록 다시 로드
-    await _loadExtinguishers();
   }
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('소화기 목록'),
       ),
       body: RefreshIndicator(
         onRefresh: _loadExtinguishers,
-        child: _loading && _items.isEmpty
+        child: _loading
             ? const Center(child: CircularProgressIndicator())
-            : _items.isEmpty
+            : _error != null
                 ? ListView(
-                    children: const [
-                      SizedBox(height: 200),
-                      Center(child: Text('등록된 소화기가 없습니다.')),
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.all(20),
+                        child: Text(
+                          _error!,
+                          style: theme.textTheme.bodyMedium
+                              ?.copyWith(color: theme.colorScheme.error),
+                        ),
+                      ),
                     ],
                   )
-                : ListView.builder(
-                    itemCount: _items.length,
-                    itemBuilder: (context, index) {
-                      final ext = _items[index];
-                      return Card(
-                        margin:
-                            const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        child: ListTile(
-                          leading: ext.imagePath != null &&
-                                  ext.imagePath!.isNotEmpty
-                              ? ClipRRect(
-                                  borderRadius: BorderRadius.circular(8),
-                                  child: Image.network(
-                                    '$imageRootUrl${ext.imagePath}',
-                                    width: 56,
-                                    height: 56,
-                                    fit: BoxFit.cover,
+                : _items.isEmpty
+                    ? ListView(
+                        children: const [
+                          SizedBox(height: 80),
+                          Center(child: Text('등록된 소화기가 없습니다.')),
+                        ],
+                      )
+                    : ListView.separated(
+                        padding: const EdgeInsets.all(16),
+                        itemCount: _items.length,
+                        separatorBuilder: (_, __) =>
+                            const SizedBox(height: 12),
+                        itemBuilder: (context, index) {
+                          final item = _items[index];
+                          return Card(
+                            elevation: 1,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: ListTile(
+                              leading: Image.asset(
+                                'assets/images/fire_list_icon.png',
+                                width: 40,
+                                height: 40,
+                                fit: BoxFit.contain,
+                              ),
+                              title: Text(
+                                item.location.isEmpty
+                                    ? '(이름 없음)'
+                                    : item.location,
+                              ),
+                              subtitle: Text(
+                                item.expireDate.isEmpty
+                                    ? '사용 가능 기간: 정보 없음'
+                                    : '사용 가능 기간: ${item.expireDate}',
+                              ),
+                              onTap: () async {
+                                await Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) =>
+                                        DetailScreen(extinguisher: item),
                                   ),
-                                )
-                              : const Icon(Icons.fire_extinguisher),
-                          title: Text(ext.name ?? '이름 없음'),
-                          subtitle: Row(
-                            children: [
-                              Icon(
-                                ext.isLightOn == true
-                                    ? Icons.lightbulb
-                                    : Icons.lightbulb_outline,
-                                size: 18,
+                                );
+                                await _loadExtinguishers();
+                              },
+                              trailing: IconButton(
+                                icon: const Icon(Icons.delete_outline),
+                                onPressed: () => _deleteItem(item),
                               ),
-                              const SizedBox(width: 8),
-                              Icon(
-                                ext.isSoundOn == true
-                                    ? Icons.volume_up
-                                    : Icons.volume_off,
-                                size: 18,
-                              ),
-                            ],
-                          ),
-                          onTap: () => _openDetail(ext),
-                        ),
-                      );
-                    },
-                  ),
+                            ),
+                          );
+                        },
+                      ),
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _globalOff,
-        icon: const Icon(Icons.power_settings_new),
-        label: const Text('전체 끄기'),
+      floatingActionButton: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          FloatingActionButton.extended(
+            heroTag: 'all_off',
+            onPressed: _allOff,
+            label: const Text('전체 끄기'),
+            icon: const Icon(Icons.power_settings_new),
+          ),
+          const SizedBox(height: 12),
+          FloatingActionButton.extended(
+            heroTag: 'add',
+            onPressed: _goToRegister,
+            label: const Text('소화기 등록'),
+            icon: const Icon(Icons.add),
+          ),
+        ],
       ),
     );
   }
