@@ -136,7 +136,8 @@ class _ExtinguisherListScreenState extends State<ExtinguisherListScreen> {
   // ---------------- 전체 끄기 ----------------
   Future<void> _globalOff() async {
     try {
-      final res = await httpPut(
+      // ★ 여기: PUT → POST 로 변경
+      final res = await httpPost(
         '/api/v1/extinguishers/global-off',
         {},
         context: context,
@@ -145,7 +146,7 @@ class _ExtinguisherListScreenState extends State<ExtinguisherListScreen> {
 
       if (!mounted) return;
 
-      if (res.statusCode == 200) {
+      if (res.statusCode == 200 || res.statusCode == 201) {
         // body 에 ok 가 있을 수도 있고, 없을 수도 있음
         bool ok = true;
         try {
@@ -154,7 +155,7 @@ class _ExtinguisherListScreenState extends State<ExtinguisherListScreen> {
             ok = body['ok'] == true;
           }
         } catch (_) {
-          // JSON 이 아니면 statusCode 200을 성공으로 간주
+          // JSON 이 아니면 statusCode 만으로 성공 처리
         }
 
         if (ok) {
