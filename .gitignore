@@ -1,0 +1,20 @@
+# Flutter/Dart
+.dart_tool/
+.buildlog/
+.packages
+.pub-cache/
+.pub/
+build/
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+ios/Flutter/App.framework
+*.log
+
+# VS Code
+.vscode/
+
+# 기타
+.idea/
+*.iml
+android/.gradle/
+android/local.properties
